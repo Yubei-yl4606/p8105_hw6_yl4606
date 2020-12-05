@@ -9,6 +9,8 @@ output: github_document
 library(tidyverse)
 library(viridis)
 library(modelr)
+library(purrr)
+library(broom)
 knitr::opts_chunk$set(
 	echo = TRUE,
 	warning = FALSE,
@@ -67,7 +69,7 @@ summary(my_reg)
 birthweight_df %>% 
   modelr::add_residuals(my_reg) %>% 
   ggplot(aes(x = bwt, y = resid)) + 
-  geom_point()
+  geom_point(alpha = 0.5)
 ```
 The residuals have a positive linear pattern.
 
@@ -130,7 +132,7 @@ The plot shows the distribution of RMSE values for each candidate model. The RMS
 
 # Problem 3
 
-```{r}
+```{r, include = FALSE}
 weather_df = 
   rnoaa::meteo_pull_monitors(
     c("USW00094728"),
@@ -142,5 +144,70 @@ weather_df =
     tmin = tmin / 10,
     tmax = tmax / 10) %>%
   select(name, id, everything())
+```
+
+## Bootstrapping
+```{r, cache=TRUE}
+bootstrap_df = 
+  weather_df %>% 
+  modelr::bootstrap(5000, id = "strap_number") 
+```
+
+```{r}
+bootstrap_df%>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)),
+    results = map(models, tidy)) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) 
+```
+
+```{r}
+bootstrap_df %>%
+  filter(term == 'tmin') %>% 
+  ggplot(aes(x = estimate)) + geom_density()
+
+bootstrap_df %>%
+  filter(term == '(Intercept)') %>% 
+  ggplot(aes(x = estimate)) + geom_density()
+```
+The distribution of both estimates $\beta_1$ and $\beta_2$ follows approximately normal distribution. The distribution of intercept estimate is a little skewed to the left, which may be related to the frequency with which large outliers are included in the bootstrap sample.
+
+```{r, cache = TRUE}
+bootstrap_df = 
+  weather_df %>% 
+  modelr::bootstrap(5000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)),
+    results_r = map(models, glance),
+    results_beta = map(models, tidy)
+    ) %>% 
+  select(strap_number, results_r, results_beta) %>% 
+  unnest(results_r, results_beta) %>% 
+  janitor::clean_names() %>% 
+  select(strap_number, adj_r_squared, term, estimate) %>% 
+  mutate(
+    term = replace(term, term == '(Intercept)', 'intercept')) %>% 
+  pivot_wider(
+    names_from = 'term',
+    values_from = 'estimate'
+  ) %>% 
+  mutate(
+    beta_1 = intercept,
+    beta_2 = tmin,
+    log_b1_b2 = log10(beta_1*beta_2)) %>% 
+  select(-intercept, -tmin)
+```
+
+## Find 2.5% and 97.5% Quantiles
+
+```{r}
+r_sq = bootstrap_df$adj_r_squared
+quantile(r_sq, c(0.025, 0.975))
+```
+
+```{r}
+log = bootstrap_df$log_b1_b2
+quantile(log, c(0.025, 0.975))
 ```
 
