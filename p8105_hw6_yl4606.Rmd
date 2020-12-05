@@ -28,7 +28,7 @@ theme_set(theme_minimal() + theme(legend.position = "bottom"))
 # Problem 2
 
 ## tidy the data
-```{r}
+```{r, message = FALSE}
 birthweight_df = 
   read_csv("data/birthweight.csv", na = c("", "NA", "Unknown")) %>% 
   mutate(babysex = factor(babysex),
@@ -87,7 +87,7 @@ summary(reg_1)
 summary(reg_2)
 ```
 
-As we can see from the summary of all three models, $R^2$ of model I generated using BIC is 0.7173, compared with 0.5767 and 0.6844 of models given. 
+As we can see from the summary of all three models, $R^2$ of model I generated using BIC is 0.7173, compared with 0.5767 and 0.6844 of models given. So the model generated using BIC could explain more about birthweight by variables selected than other two models.
 
 ## Cross Validation
 
@@ -125,4 +125,22 @@ cv_df %>%
 ```
 
 The plot shows the distribution of RMSE values for each candidate model. The RMSE distribution of my regression model(BIC method) is the smallest among three models, which suggests that residuals are less spread out in this model. Thus, more accurate predictions would be made.
+
+<br/>
+
+# Problem 3
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
 
