@@ -6,25 +6,124 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(viridis)
+library(modelr)
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
 
-## R Markdown
+# Problem 2
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+## tidy the data
+```{r}
+birthweight_df = 
+  read_csv("data/birthweight.csv", na = c("", "NA", "Unknown")) %>% 
+  mutate(babysex = factor(babysex),
+         frace = factor(frace),
+         malform = factor(malform),
+         mrace = factor(mrace))
 ```
 
-## Including Plots
+```{r}
+birthweight_df %>% 
+  ggplot(aes(x = bwt)) +
+  geom_density()
+```
+The density graph of birthweight has a bell shape, so no need for log transformation.
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+## Backward Elimination
+```{r}
+mult.fit <- lm(bwt ~ ., data=birthweight_df)
+step(mult.fit, direction='backward')
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r, include=FALSE}
+my_reg <- lm(formula = bwt ~ babysex + bhead + blength + delwt + fincome + 
+    gaweeks + mheight + mrace + parity + ppwt + smoken, data = birthweight_df)
+```
+
+I use backward elimination method, which removes variable that have large p-value one by one from the original full model and refit. Until all variables are significant, the process completes. Therefore, I derive the model: **bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken** with coefficients listed below: 
+
+```{r}
+summary(my_reg)
+```
+
+## Residual Plot
+
+```{r}
+birthweight_df %>% 
+  modelr::add_residuals(my_reg) %>% 
+  ggplot(aes(x = bwt, y = resid)) + 
+  geom_point()
+```
+The residuals have a positive linear pattern...
+
+## Compare Models 
+
+```{r}
+reg_1 <- lm(bwt ~ blength + gaweeks, data = birthweight_df) 
+reg_2 <- lm(bwt ~ bhead * blength * babysex, data = birthweight_df)
+```
+
+```{r}
+summary(reg_1)
+```
+
+
+```{r}
+summary(reg_2)
+```
+
+As we can see from the summary of all three models, $R^2$ of model I generated using BIC is 0.7173, compared with 0.5767 and 0.6844 of models given. 
+
+## Cross Validation
+
+```{r}
+cv_df = 
+  crossv_mc(birthweight_df, 100) 
+
+cv_df =
+  cv_df %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))
+
+cv_df = 
+  cv_df %>% 
+  mutate(
+    my_reg_mod  = map(train, ~lm(bwt ~ babysex + bhead + blength + delwt + fincome + 
+    gaweeks + mheight + mrace + parity + ppwt + smoken, data = .x)),
+    reg_1_mod  = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    reg_2_mod  = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x))) %>% 
+  mutate(
+    rmse_linear = map2_dbl(my_reg_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2_dbl(reg_1_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_wiggly = map2_dbl(reg_2_mod, test, ~rmse(model = .x, data = .y)))
+```
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
+
+
