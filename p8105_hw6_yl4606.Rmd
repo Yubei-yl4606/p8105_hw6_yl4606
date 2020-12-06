@@ -2,7 +2,9 @@
 title: "p8105_hw6_yl4606"
 author: "Yubei Liang"
 date: "12/5/2020"
-output: github_document
+output: 
+  pdf_document: default 
+  github_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -147,14 +149,15 @@ weather_df =
 ```
 
 ## Bootstrapping
-```{r, cache=TRUE}
+```{r}
 bootstrap_df = 
   weather_df %>% 
   modelr::bootstrap(5000, id = "strap_number") 
 ```
 
-```{r}
-bootstrap_df%>% 
+Unnest results of 5000 models: 
+```{r, cache = TRUE}
+unnest_df = bootstrap_df %>% 
   mutate(
     models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)),
     results = map(models, tidy)) %>% 
@@ -163,20 +166,21 @@ bootstrap_df%>%
 ```
 
 ```{r}
-bootstrap_df %>%
-  filter(term == 'tmin') %>% 
-  ggplot(aes(x = estimate)) + geom_density()
-
-bootstrap_df %>%
+unnest_df %>%
   filter(term == '(Intercept)') %>% 
   ggplot(aes(x = estimate)) + geom_density()
-```
-The distribution of both estimates $\beta_1$ and $\beta_2$ follows approximately normal distribution. The distribution of intercept estimate is a little skewed to the left, which may be related to the frequency with which large outliers are included in the bootstrap sample.
 
-```{r, cache = TRUE}
-bootstrap_df = 
-  weather_df %>% 
-  modelr::bootstrap(5000, id = "strap_number") %>% 
+unnest_df %>%
+  filter(term == 'tmin') %>% 
+  ggplot(aes(x = estimate)) + geom_density()
+```
+
+The distribution of both estimates $\beta_0$ and $\beta_1$ follows approximately normal distribution. The distribution of intercept estimate is a little skewed to the left, which may be related to the frequency with which large outliers are included in the bootstrap sample.\
+
+Cleaned dataframe with $r^2$ and $log(\beta_0*\beta_1)$ extracted:
+```{r, message = FALSE, warning = FALSE, cache = TRUE}
+bootstrap_clean_df = 
+  bootstrap_df %>% 
   mutate(
     models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)),
     results_r = map(models, glance),
@@ -197,17 +201,22 @@ bootstrap_df =
     beta_2 = tmin,
     log_b1_b2 = log10(beta_1*beta_2)) %>% 
   select(-intercept, -tmin)
+
+head(bootstrap_clean_df)
 ```
 
-## Find 2.5% and 97.5% Quantiles
+## Get 2.5% and 97.5% Quantiles
 
 ```{r}
-r_sq = bootstrap_df$adj_r_squared
+r_sq = bootstrap_clean_df$adj_r_squared
 quantile(r_sq, c(0.025, 0.975))
 ```
 
 ```{r}
-log = bootstrap_df$log_b1_b2
+log = bootstrap_clean_df$log_b1_b2
 quantile(log, c(0.025, 0.975))
 ```
 
+The 95% confidence interval for $r^2$ is (0.8937, 0.9273). 
+
+The 95% confidence interval for $log(\beta_0*\beta_1)$ is (0.8530, 0.8945). 
